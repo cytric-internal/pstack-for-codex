@@ -20,7 +20,9 @@ Read `references/model-profile.md` before changing configuration. The portable p
 
 ## Model policy
 
-Ask whether each role should inherit the parent or request an explicit `model` plus `reasoning_effort` pair.
+Ask for a reasoning budget and whether each role should inherit the parent or request an explicit `model` plus `reasoning_effort` pair. The budget tunes only optional installed custom-agent profiles; it does not rewrite per-invocation worker models, which follow the live Codex model controls and parent policies.
+
+Offer these budget targets: `unlimited` keeps the model's selected supported effort; `large` targets `xhigh`; `medium` targets `high`; `small` targets `medium`. After the user chooses a model, check that model's advertised effort set. If the target is unavailable, suggest the highest supported effort at or below the target and ask the user to choose it or another supported pair. Never invent model-name suffixes or infer a model's effort from its slug. Inheritance stays inheritance at every budget.
 
 If a supported Codex model-list surface is observable, convert it to JSON records shaped like:
 

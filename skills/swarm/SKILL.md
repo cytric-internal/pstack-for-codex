@@ -25,18 +25,19 @@ Open a todolist with one entry per phase before launching anything.
 3. Set N from the user or derive it from the shape. Cap N at observable runtime capacity. Queue excess lanes; never drop them silently.
 4. Pick the worker model from `swarm workers` in the installed pstack model profiles when present. Otherwise use the configured fast profile. For a model race, name each arm's model up front.
 5. Give each worker its own writable output when it writes. Use a worktree, branch, or `/tmp1-<slug>/worker-<n>/`.
+6. When workers verify or measure commits, name the exact SHAs in each brief. For measurements, also name the method, including sample count, what counts as one sample, and the order. Require each result to record the SHAs and method it used.
 
 ## Phase B: Fan out
 
 After proving independent reads or isolated writes, dispatch all ready workers together through supported subagent tools. Use an installed role profile when validated; otherwise use generic agents with inherited model pairs. A worker that needs local devices or live-control capabilities stays on the surface that provides them. For a non-default base, create or select the exact worktree or branch before dispatch and name it in the brief.
 
-Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence.
+Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that proves a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 
 If a worker drops out, reconcile its partial state and make one bounded retry when safe. Otherwise proceed with a labeled partial result or fail closed when that lane is required.
 
 ## Phase C: Aggregate
 
-Read the terminal results. For coverage, every required slice needs a result. For a race, apply the selection rule declared up front. Use first pass, rank all, or best-of. Do not paste raw worker dumps.
+Read the terminal results. Drop any result that omits the SHAs and method named in its brief, then rerun that worker once. After a second miss, record a gap; a gap does not count as a pass. For coverage, every required slice needs a result. For a race, apply the selection rule declared up front. Use first pass, rank all, or best-of. Do not paste raw worker dumps.
 
 Keep a compact result table, one-line evidenced issues, and explicit gaps or dropouts.
 

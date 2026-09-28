@@ -17,7 +17,8 @@ test("Codex package identity is consistent", () => {
   assert.doesNotMatch(lock, /@cursor-skill/);
   const checker = readFileSync(join(scripts, "check-plan.mjs"), "utf8");
   assert.doesNotMatch(checker, /grok-4\.6-fast-xhigh|"\/goal"/);
-  assert.match(checker, /configured fast profile/);
+  assert.match(checker, /hasResolvedLiveLane/);
+  assert.match(checker, /hasChangeOnlyTick/);
 });
 
 test("missing Bun fails before dependency state is created", async () => {

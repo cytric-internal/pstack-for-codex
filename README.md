@@ -1,25 +1,25 @@
 # pstack for Codex
 
-`pstack-for-codex` is a Codex-native derivative of [pstack](https://github.com/cursor/plugins/tree/main/pstack). It packages deliberate engineering workflows as 48 explicit-only skills and 23 Poteto Mode playbooks.
+`pstack-for-codex` is a Codex-native derivative of [pstack](https://github.com/cursor/plugins/tree/adf3218ca2f5b9971eedc07a76bef22df7701539/pstack), reviewed and pinned at upstream version 0.15.5. It packages deliberate engineering workflows as 48 explicit-only skills and 23 Poteto Mode playbooks. Aqua-123 published the prior Codex fork; Cytric maintains this fork with additional protections for reserved or symlinked agent profiles and managed worktree archival.
 
 Use `$poteto-mode` for a substantial engineering task. It selects a playbook, records the work as verifiable steps, and invokes narrower skills when the steps need them. The parent task keeps authority for integration, external writes, commits, pushes, and the final result.
 
 ## Install
 
-This public repository is a Codex marketplace. Install it directly from GitHub:
+This GitHub repository is a Codex marketplace. Install it directly:
 
 ```bash
-codex plugin marketplace add Aqua-123/pstack-for-codex
+codex plugin marketplace add cytric-internal/pstack-for-codex
 codex plugin add pstack-for-codex@pstack-for-codex-local
 ```
 
-For a local checkout, replace `Aqua-123/pstack-for-codex` with its absolute path. Confirm the installed plugin:
+For a local checkout, replace `cytric-internal/pstack-for-codex` with its absolute path. Confirm the installed plugin:
 
 ```bash
 codex plugin list --json
 ```
 
-Codex CLI `0.153.4` does not expose an offline runtime skill-index command. The release suite validates the skill catalog from the installed artifact; start a new task to exercise prompt-time skill discovery.
+The release suite validates the skill catalog from the installed artifact; start a new task to exercise prompt-time skill discovery.
 
 All 48 skills require explicit invocation. Codex stores their full identities under the `pstack-for-codex` namespace. In a prompt, invoke a skill with its registered `$name`:
 
@@ -37,6 +37,8 @@ The skills work without custom agent profiles. Use `$setup-pstack` only when you
 - `pstack-comment-sicko` for read-only comment review.
 
 Setup writes either project profiles under `.codex/agents/` or user profiles under `~/.codex/agents/`. It records file hashes in a receipt and refuses to overwrite files owned by someone else. An explicit `model` and `reasoning_effort` pair is accepted only when a supported Codex model-list surface proves the pair. Otherwise the profile inherits the parent model and the receipt records that the requested pair is unverified.
+
+Optional profile setup supports reasoning budgets: `unlimited` keeps the selected supported effort, while `large`, `medium`, and `small` target `xhigh`, `high`, and `medium` when the model advertises them. This does not set per-invocation worker models, which remain subject to live Codex controls and parent policies.
 
 Read [Agent setup and model evidence](./docs/codex-adaptation.md#agent-setup-and-model-evidence) before changing profiles.
 

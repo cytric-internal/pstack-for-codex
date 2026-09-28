@@ -15,10 +15,10 @@ test("fork and upstream identities remain separate", async () => {
     readJson("package.json"),
     readJson("upstream.lock.json"),
   ]);
-  assert.equal(manifest.version, "0.2.0");
-  assert.equal(packageJson.version, "0.2.0");
-  assert.equal(lock.source.version, "0.15.1");
-  assert.equal(lock.source.commit, "f8abeddd1862dc73704e3d719dd73df0d51b8c71");
+  assert.equal(manifest.version, "0.3.0");
+  assert.equal(packageJson.version, "0.3.0");
+  assert.equal(lock.source.version, "0.15.5");
+  assert.equal(lock.source.commit, "adf3218ca2f5b9971eedc07a76bef22df7701539");
   assert.equal(lock.inventory.fileCount, 158);
 });
 

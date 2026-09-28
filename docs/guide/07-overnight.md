@@ -24,6 +24,10 @@ Codex may use a durable goal and a thread heartbeat only because the request ask
 
 A scheduled task, recurring monitor, or separate user-owned task still needs an explicit request for that object. The phrase "overnight" does not authorize an external message, pull request, merge, deployment, or new repository.
 
+## Run an authorized PR queue
+
+When the user authorizes a queue of PRs, [Autopilot-full](../../skills/poteto-mode/playbooks/autopilot-full.md) starts independent verifier rounds at each owner’s code-ready head and again after a push changes its patch. Self-proof and CI can run alongside those rounds. A merge still needs the user’s merge authority and a clean verdict covering the patch that will land. [Autopilot-stack](../../skills/poteto-mode/playbooks/autopilot-stack.md) delivers the verified chain for the user to land.
+
 ## Audit the result
 
 In the morning, inspect:

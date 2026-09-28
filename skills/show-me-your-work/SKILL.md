@@ -40,6 +40,8 @@ Use the helper so rows stay well-formed: `scripts/log.sh <logfile> <phase> <deci
 
 Log decision points and checkpoints, not every action: a fork chosen, a unit completed with its verification result, a pivot or revert with its trigger, a blocker surfaced, a gate fixed. For loop runs, one row per iteration. Skip the trivial and self-evident.
 
+A run is one agent task or conversation, including later turns and summaries. A replacement agent or a new task starts a new run. When you resume work on a log that already has rows, read its last rows first. Add a `start` row before this run’s first decision, and after another run’s `start` row if you resume writing later. Record the timestamp range of rows since the previous run that you did not write, and identify this run in the evidence with an available task, thread, or agent identifier. Reserve phase `start` for these boundaries.
+
 ## Where it lives
 
 By default the log is a working artifact, not committed. Keep it at `decisions.tsv` in the work dir, or `.audit/<task-slug>.tsv` when several efforts run at once, and leave it out of git. Most work doesn't need a committed trail; the local log still keeps the run honest and can be discarded after.
@@ -54,14 +56,9 @@ Commit it only when the work is ambitious enough that a reviewer needs the trail
 
 ## Audit the log against supported task history
 
-At the end of the run, check the log against the current task through supported task-history APIs. If that surface is unavailable, use the active conversation digest plus live git and artifact state. Do not scrape a private host store. Walk the log against what actually happened:
+At the end of the run, check this run’s rows against supported task-history APIs. If that surface is unavailable, use the active conversation digest plus live Git and artifact state. Do not inspect private host stores or unrelated conversations. Review each of this run’s stretches: from its `start` row, or the first row if this run created the log, through the next `start` row by another run. Check that each row records a real decision or action and that its evidence resolves. Add a row for a missing fork, pivot, or abandoned approach that shaped the work.
 
-- Every row maps to a real action. Cut invented or aspirational entries.
-- Each row's evidence resolves and shows what the row claims.
-- A fork, pivot, or abandoned approach that shaped the work but isn't logged is a gap. Add it.
-- Drop padding. If nobody would audit a row, it doesn't earn its place.
-
-Fix the log, not the story. If the work diverged from what a row claims, the row is wrong.
+The log is append-only, including during the audit. Never edit or remove a row. If a row records an invented action, or its claim or evidence is wrong, append a correction that names the row it supersedes and gives the true action and resolving evidence. Audit earlier rows only when this run’s work reveals a specific error in them; append a correction for that error.
 
 ## Cross-model review of the trail
 
