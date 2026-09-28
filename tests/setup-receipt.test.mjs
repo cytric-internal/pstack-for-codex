@@ -120,3 +120,111 @@ test("user-scoped installs write only beneath the supplied Codex home", async (t
   for (const file of installed.files) await fs.stat(path.join(userHome, ".codex", file.path));
   await assert.rejects(fs.stat(path.join(projectRoot, ".codex/agents")), { code: "ENOENT" });
 });
+
+test("reserved role destinations are never overwritten without a valid ownership receipt", async (t) => {
+  for (const contents of ['name = "someone-else"\n', 'sandbox = "read-only"\n']) {
+    const { projectRoot, userHome } = await fixture(t);
+    const reserved = path.join(projectRoot, ".codex/agents/pstack-poteto-agent.toml");
+    await fs.mkdir(path.dirname(reserved), { recursive: true });
+    await fs.writeFile(reserved, contents);
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /reserved custom-agent path already exists/);
+    assert.equal(await fs.readFile(reserved, "utf8"), contents);
+    await assert.rejects(fs.stat(path.join(projectRoot, ".codex/agents/pstack-comment-sicko.toml")), { code: "ENOENT" });
+  }
+});
+
+test("managed locations reject leaf and parent symlinks", async (t) => {
+  await t.test("leaf", async (t) => {
+    const { projectRoot, userHome } = await fixture(t);
+    const dir = path.join(projectRoot, ".codex/agents");
+    await fs.mkdir(dir, { recursive: true });
+    const outside = path.join(projectRoot, "outside.toml");
+    await fs.writeFile(outside, "keep\n");
+    await fs.symlink(outside, path.join(dir, "pstack-poteto-agent.toml"));
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /symlink at managed path/);
+    assert.equal(await fs.readFile(outside, "utf8"), "keep\n");
+  });
+  await t.test("dangling receipt", async (t) => {
+    const { projectRoot, userHome } = await fixture(t);
+    const codex = path.join(projectRoot, ".codex");
+    await fs.mkdir(codex, { recursive: true });
+    await fs.symlink("missing", path.join(codex, "pstack-for-codex-agent-receipt.json"));
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /symlink at managed path/);
+  });
+  await t.test("parent .codex directory", async (t) => {
+    const { projectRoot, userHome } = await fixture(t);
+    const outside = path.join(projectRoot, "outside");
+    await fs.mkdir(outside);
+    await fs.symlink(outside, path.join(projectRoot, ".codex"));
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /symlink at managed path/);
+    assert.deepEqual(await fs.readdir(outside), []);
+  });
+});
+
+test("owned profiles can be upgraded and uninstalled", async (t) => {
+  const { projectRoot, userHome } = await fixture(t);
+  const installed = await installAgents({ pluginRoot: root, projectRoot, userHome });
+  await installAgents({ pluginRoot: root, projectRoot, userHome });
+  for (const file of installed.files) {
+    const content = await fs.readFile(path.join(projectRoot, file.path), "utf8");
+    assert.equal(content.includes("\0"), false);
+  }
+  const removed = await uninstallAgents({ projectRoot, userHome });
+  assert.equal(removed.status, "uninstalled");
+  for (const file of installed.files) await assert.rejects(fs.stat(path.join(projectRoot, file.path)), { code: "ENOENT" });
+});
+
+
+test("agent directory and user-scoped symlinks are rejected", async (t) => {
+  await t.test("agents directory", async (t) => {
+    const { projectRoot, userHome } = await fixture(t);
+    const outside = path.join(projectRoot, "outside");
+    await fs.mkdir(outside);
+    await fs.mkdir(path.join(projectRoot, ".codex"));
+    await fs.symlink(outside, path.join(projectRoot, ".codex/agents"));
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /symlink at managed path/);
+    assert.deepEqual(await fs.readdir(outside), []);
+  });
+  await t.test("user .codex", async (t) => {
+    const { projectRoot, userHome } = await fixture(t);
+    const outside = path.join(userHome, "outside");
+    await fs.mkdir(outside);
+    await fs.symlink(outside, path.join(userHome, ".codex"));
+    await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome, scope: "user" }), /symlink at managed path/);
+    assert.deepEqual(await fs.readdir(outside), []);
+  });
+});
+
+test("symlink substitution after install is rejected by update and uninstall", async (t) => {
+  for (const action of ["update", "uninstall"]) {
+    await t.test(action, async (t) => {
+      const { projectRoot, userHome } = await fixture(t);
+      const installed = await installAgents({ pluginRoot: root, projectRoot, userHome });
+      const external = path.join(projectRoot, "external.toml");
+      await fs.writeFile(external, "keep\n");
+      await fs.rm(path.join(projectRoot, installed.files[0].path));
+      await fs.symlink(external, path.join(projectRoot, installed.files[0].path));
+      if (action === "update") {
+        await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /symlink at managed path/);
+      } else {
+        await assert.rejects(uninstallAgents({ projectRoot, userHome }), /symlink at managed path/);
+      }
+      assert.equal(await fs.readFile(external, "utf8"), "keep\n");
+    });
+  }
+});
+
+test("non-object receipts cannot establish ownership or create profiles", async (t) => {
+  for (const value of ["null", "false", "0", "\"\"", "[]"]) {
+    await t.test(value, async (t) => {
+      const { projectRoot, userHome } = await fixture(t);
+      const receipt = path.join(projectRoot, ".codex/pstack-for-codex-agent-receipt.json");
+      await fs.mkdir(path.dirname(receipt), { recursive: true });
+      await fs.writeFile(receipt, `${value}\n`);
+      await assert.rejects(installAgents({ pluginRoot: root, projectRoot, userHome }), /cannot establish ownership/);
+      assert.equal(await fs.readFile(receipt, "utf8"), `${value}\n`);
+      await assert.rejects(fs.stat(path.join(projectRoot, ".codex/agents/pstack-poteto-agent.toml")), { code: "ENOENT" });
+      await assert.rejects(fs.stat(path.join(projectRoot, ".codex/agents/pstack-comment-sicko.toml")), { code: "ENOENT" });
+    });
+  }
+});

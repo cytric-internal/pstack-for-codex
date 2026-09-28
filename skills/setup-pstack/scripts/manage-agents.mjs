@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +40,7 @@ function sha256(value) {
 function layer(scope, projectRoot, userHome) {
   if (scope === "project") {
     return {
+      scope,
       root: projectRoot,
       agentsDir: path.join(projectRoot, ".codex/agents"),
       receipt: path.join(projectRoot, ".codex/pstack-for-codex-agent-receipt.json"),
@@ -49,6 +50,7 @@ function layer(scope, projectRoot, userHome) {
   if (scope === "user") {
     const codexRoot = path.join(userHome, ".codex");
     return {
+      scope,
       root: codexRoot,
       agentsDir: path.join(codexRoot, "agents"),
       receipt: path.join(codexRoot, "pstack-for-codex-agent-receipt.json"),
@@ -119,9 +121,31 @@ export function resolveModelPolicy({ requested = null, observableModels = null }
   };
 }
 
+async function assertManagedPathsSafe(target) {
+  // Only inspect the managed .codex tree; canonical ancestors such as /tmp may be symlinks.
+  const codexDir = target.scope === "project" ? path.join(target.root, ".codex") : target.root;
+  const paths = [codexDir, path.join(codexDir, "agents"), ...ROLE_SPECS.map((role) => path.join(codexDir, "agents", `${role.name}.toml`)), target.receipt];
+  for (const candidate of paths) {
+    try {
+      const stat = await fs.lstat(candidate);
+      if (stat.isSymbolicLink()) throw new Error(`refusing symlink at managed path: ${candidate}`);
+      if (candidate.endsWith(".toml") && !stat.isFile()) throw new Error(`managed profile is not a regular file: ${candidate}`);
+      if (candidate === target.receipt && !stat.isFile()) throw new Error(`setup receipt is not a regular file: ${candidate}`);
+      if ((candidate === codexDir || candidate === path.join(codexDir, "agents")) && !stat.isDirectory()) throw new Error(`managed directory is not a directory: ${candidate}`);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw error;
+    }
+  }
+}
+
 async function readReceipt(file) {
   try {
-    return JSON.parse(await fs.readFile(file, "utf8"));
+    const receipt = JSON.parse(await fs.readFile(file, "utf8"));
+    if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) {
+      throw new Error("setup receipt is invalid and cannot establish ownership");
+    }
+    return receipt;
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -194,6 +218,7 @@ export async function installAgents({
 } = {}) {
   if (!pluginRoot) throw new Error("pluginRoot is required");
   const target = layer(scope, projectRoot, userHome);
+  await assertManagedPathsSafe(target);
   const currentReceipt = await readReceipt(target.receipt);
   validateReceipt(currentReceipt, scope, target);
   const divergence = await inspectOwnedFiles(currentReceipt, target);
@@ -210,6 +235,16 @@ export async function installAgents({
     throw new Error(`duplicate custom-agent name "${duplicate.name}" across: ${duplicate.files.join(", ")}`);
   }
   const ownedPaths = new Set((currentReceipt?.files ?? []).map((record) => path.resolve(target.root, record.path)));
+  // Exact reserved destinations are protected even when their TOML is malformed or has another name.
+  for (const role of ROLE_SPECS) {
+    const reserved = path.join(target.agentsDir, `${role.name}.toml`);
+    try {
+      await fs.lstat(reserved);
+      if (!ownedPaths.has(path.resolve(reserved))) throw new Error(`reserved custom-agent path already exists and is not owned: ${reserved}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
   for (const role of ROLE_SPECS) {
     const collision = inventory.records.find(
       (record) => record.name === role.name && !ownedPaths.has(path.resolve(record.file)),
@@ -230,7 +265,30 @@ export async function installAgents({
   }
 
   await fs.mkdir(target.agentsDir, { recursive: true });
-  for (const record of rendered) await fs.writeFile(record.file, record.content, { mode: 0o600 });
+  for (const record of rendered) {
+    if (ownedPaths.has(path.resolve(record.file))) {
+      const handle = await fs.open(record.file, fsConstants.O_RDWR | fsConstants.O_NOFOLLOW);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile() || sha256(await handle.readFile()) !== currentReceipt.files.find((item) => item.path === record.path).sha256) {
+          throw new Error(`owned profile changed during update: ${record.path}`);
+        }
+        await handle.truncate(0);
+        const bytes = Buffer.from(record.content);
+        let offset = 0;
+        while (offset < bytes.length) {
+          const { bytesWritten } = await handle.write(bytes, offset, bytes.length - offset, offset);
+          if (!bytesWritten) throw new Error(`failed to update owned profile: ${record.path}`);
+          offset += bytesWritten;
+        }
+      } finally {
+        await handle.close();
+      }
+    } else {
+      const handle = await fs.open(record.file, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+      try { await handle.writeFile(record.content); } finally { await handle.close(); }
+    }
+  }
   const receipt = {
     schema_version: 1,
     owner: "pstack-for-codex/setup-pstack",
@@ -246,12 +304,24 @@ export async function installAgents({
     })),
   };
   await fs.mkdir(path.dirname(target.receipt), { recursive: true });
-  await fs.writeFile(target.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  const receiptContent = `${JSON.stringify(receipt, null, 2)}\n`;
+  if (currentReceipt) {
+    const handle = await fs.open(target.receipt, fsConstants.O_WRONLY | fsConstants.O_NOFOLLOW);
+    try {
+      if (!(await handle.stat()).isFile()) throw new Error(`setup receipt is not a regular file: ${target.receipt}`);
+      await handle.truncate(0);
+      await handle.writeFile(receiptContent);
+    } finally { await handle.close(); }
+  } else {
+    const handle = await fs.open(target.receipt, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+    try { await handle.writeFile(receiptContent); } finally { await handle.close(); }
+  }
   return { status: "installed", scope, receiptPath: target.relative(target.receipt), files: receipt.files };
 }
 
 export async function uninstallAgents({ projectRoot = process.cwd(), userHome = os.homedir(), scope = "project" } = {}) {
   const target = layer(scope, projectRoot, userHome);
+  await assertManagedPathsSafe(target);
   const receipt = await readReceipt(target.receipt);
   if (!receipt) return { status: "not-installed", scope, modified: [] };
   validateReceipt(receipt, scope, target);
